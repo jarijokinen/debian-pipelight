@@ -1,0 +1,342 @@
+#!/bin/bash
+#
+# Pipelight installer for Debian Wheezy (amd64)
+#
+# Copyright (C) 2013 Jari Jokinen
+# URL: https://github.com/jarijokinen/debian-pipelight
+
+pipelight_version="master" 
+wine_version="1.7.0"
+installer_tmp_path="/tmp/pipelight-installer"
+
+dependencies=(
+  wget
+  ia32-libs
+  ia32-libs-i386
+  lib32asound2
+  libc6-i386
+  lib32nss-mdns
+  libasound2-plugins
+  libc6-dev
+  libx11-dev
+  mingw-w64
+  g++-mingw-w64
+  sed
+  build-essential
+  libncurses5:i386
+)
+
+# Better not change these, yet...
+
+wine_path="/opt/wine-compholio"
+wine_package="wine-compholio"
+wine_arch="amd64"
+wine_deb="${wine_package}_${wine_version}_${wine_arch}.deb"
+wine_deb_path="${installer_tmp_path}/${wine_deb}"
+wine_deb_url="http://www.compholio.com/wine-compholio/download.php?file=$wine_deb"
+pipelight_path="/usr/lib/mozilla/plugins/libpipelight.so"
+pipelight_src_path="${installer_tmp_path}/pipelight"
+pipelight_src_package="${pipelight_version}.tar.gz"
+pipelight_src_package_path="${installer_tmp_path}/${pipelight_src_package}"
+pipelight_src_package_url="http://bitbucket.org/mmueller2012/pipelight/get/${pipelight_src_package}"
+
+silverlight_installer_path="${installer_tmp_path}/silverlight-installer.exe"
+silverlight_installer_url="http://www.microsoft.com/getsilverlight/handlers/getsilverlight.ashx"
+
+bold=`tput bold`
+regular=`tput sgr0`
+red=`tput setaf 1`
+green=`tput setaf 2`
+yellow=`tput setaf 3`
+blue=`tput setaf 4`
+
+function error {
+  echo "E: $1"
+  exit 1
+}
+
+function formatted_text {
+  if [[ -x "/usr/bin/tput" ]]; then
+    echo "${1}${2}${regular}"
+  else
+    echo "${2}"
+  fi
+}
+
+function bold {
+  formatted_text "$bold" "$1"
+}
+
+function red {
+  formatted_text "$red" "$1"
+}
+
+function green {
+  formatted_text "$green" "$1"
+}
+
+function yellow {
+  formatted_text "$yellow" "$1"
+}
+
+function blue {
+  formatted_text "$blue" "$1"
+}
+
+if [[ $EUID -ne 0 ]]; then
+  error "this script must be run as root."
+fi
+
+if [[ ! -x /usr/bin/apt-get ]]; then
+  error "apt-get is missing."
+fi
+
+if [[ ! -x /usr/bin/dpkg ]]; then
+  error "dpkg is missing."
+fi
+
+echo
+bold "System-wide setup"
+echo
+
+echo -n "Checking distribution... "
+if [[ -f /etc/debian_version ]]; then
+  dist="debian"
+  green $dist
+else
+  red "Unknown"
+  error "distribution not supported."
+fi
+
+echo -n "Checking distribution version... "
+debian_version=`cat /etc/debian_version`
+if [[ $debian_verison == "7.0" || $debian_version == "7.1" ]]; then
+  green $debian_version
+else
+  red $debian_version
+  error "distribution version not supported."
+fi
+
+echo -n "Checking architecture... "
+arch=`/usr/bin/dpkg --print-architecture`
+if [[ $arch == "amd64" ]]; then
+  green $arch
+else
+  red $arch
+  error "architecture not supported."
+fi
+
+echo -n "Checking foreign architecture... "
+foreign_arch=`/usr/bin/dpkg --print-foreign-architectures | grep i386`
+if [[ $foreign_arch == "i386" ]]; then
+  green $foreign_arch
+else
+  bold "i386 missing, adding... "
+  /usr/bin/dpkg --add-architecture i386
+  /usr/bin/apt-get -qq update
+  echo -n "Checking foreign architecture... "
+  foreign_arch=`/usr/bin/dpkg --print-foreign-architectures | grep i386`
+  if [[ $foreign_arch == "i386" ]]; then
+    green $foreign_arch
+  else
+    error "adding foreign architecture i386 failed."
+  fi
+fi
+
+missing_packages=()
+for dependency in ${dependencies[@]}; do
+  echo -n "Checking $dependency... "
+  if [[ `/usr/bin/dpkg -s $dependency 2> /dev/null` ]]; then
+    green "installed"
+  else
+    missing_packages+=("$dependency")
+    yellow "missing"
+  fi
+done
+
+missing=$(printf " %s" "${missing_packages[@]}")
+missing=${missing:1}
+
+if [[ $missing_packages != "" ]]; then
+  echo
+  yellow "It seems that your system doesn't have all required packages"
+  yellow "installed. You may install these packages by running apt-get"
+  yellow "manually as a root, or let the installer run that for you."
+  echo
+  echo "The apt-get command to run is:"
+  echo
+  echo "  apt-get --no-install-recommends install ${missing}"
+  echo
+  read -r -p \
+    "Do you want to continue with the automatic installation? [y/N] " response
+  case $response in
+    [yY][eE][sS]|[yY])
+      echo
+      echo -n "Installing missing packages... "
+      /usr/bin/apt-get -qqy --no-install-recommends install ${missing}
+      ;;
+    *)
+      echo
+      echo "Installation aborted by the user."
+      ;;
+  esac
+fi
+
+echo -n "Checking temporary directory... "
+if [[ -d $installer_tmp_path ]]; then
+  green "found"
+else
+  mkdir -p $installer_tmp_path
+  green "created"
+fi
+
+echo -n "Checking wine... "
+if [[ -d $wine_path ]]; then
+  green "found"
+else
+  bold "missing"
+  echo -n "Checking wine binary package... "
+  if [[ -f $wine_deb_path ]]; then
+    green "found"
+  else
+    bold "missing, downloading..."
+    /usr/bin/wget -q $wine_deb_url -O $wine_deb_path
+    echo -n "Checking wine binary package... "
+    if [[ -f $wine_deb_path ]]; then
+      green "found"
+    else
+      error "downloading wine binary package failed."
+    fi
+  fi
+  echo -n "Installing wine binary package... "
+  /usr/bin/dpkg -i $wine_deb_path > /dev/null
+  green "done"
+  echo -n "Checking wine... "
+  if [[ -d $wine_path ]]; then
+    green "found"
+  else
+    error "installing wine binary package failed."
+  fi
+fi
+
+echo -n "Checking pipelight... "
+if [[ -f $pipelight_path ]]; then
+  green "found"
+else
+  bold "missing"
+  echo -n "Checking pipelight source... "
+  if [[ -d $pipelight_src_path ]]; then
+    green "found"
+  else
+    bold "missing, downloading..."
+    mkdir -p $pipelight_src_path
+    /usr/bin/wget -q $pipelight_src_package_url -O $pipelight_src_package_path
+    echo -n "Checking pipelight source package... "
+    if [[ -f $pipelight_src_package_path ]]; then
+      green "found"
+    else
+      error "downloading pipelight source failed."
+    fi
+    echo -n "Unpacking pipelight source package... "
+    /bin/tar --strip-components=1 -C $pipelight_src_path \
+      -xf $pipelight_src_package_path
+    green "done"
+    echo -n "Checking pipelight source... "
+    if [[ -d $pipelight_src_path ]]; then
+      green "found"
+    else
+      error "unpacking pipelight source failed."
+    fi
+  fi
+  echo -n "Compiling pipelight... "
+  old_directory=$OLDPWD
+  cd $pipelight_src_path
+  ./configure > /dev/null
+  make > /dev/null
+  make install > /dev/null
+  cd $old_directory
+  if [[ -f $pipelight_path ]]; then
+    green "done"
+  else
+    error "compiling pipelight failed."
+  fi
+fi
+
+echo -n "Checking Silverlight installer... "
+if [[ -f $silverlight_installer_path ]]; then
+  green "found"
+else
+  bold "missing, downloading... "
+  ua='Mozilla/5.0 (Windows NT 6.1; rv:23.0) Gecko/20131011 Firefox/23.0'
+  /usr/bin/wget -q -U "$ua" \
+    $silverlight_installer_url -O $silverlight_installer_path
+  echo -n "Checking Silverlight installer... "
+  if [[ -f $silverlight_installer_path ]]; then
+    green "found"
+  else
+    error "downloading Silverlight installer failed."
+  fi
+fi
+
+echo
+bold "User environment setup"
+echo
+echo "Username (the user who runs the web browser): "
+read -r username
+echo
+
+userhome=$(getent passwd "$username" | cut -d: -f6)
+pipelight_wine_path="$userhome/.wine-pipelight"
+prefix="WINEPREFIX='$pipelight_wine_path'"
+
+echo -n "Checking pipelight wine integration... "
+if [[ -d $pipelight_wine_path ]]; then
+  green "found"
+else
+  bold "missing, installing... "
+  echo
+  yellow 'NOTE: Press "Cancel" when wine asks about installing Gecko or Mono!'
+  echo
+  su -l -c "$prefix $wine_path/bin/wineboot 2> /dev/null" $username
+fi
+
+echo -n "Checking Silverlight installation... "
+if [[ -d "$pipelight_wine_path/drive_c/Program Files/Microsoft Silverlight" ]]; then
+  green "found"
+else
+  bold "missing, installing... "
+  echo
+  yellow 'NOTE: Press "Install now", "Next" and "Close" buttons.'
+  echo
+  su -l -c "$prefix $wine_path/bin/wine $silverlight_installer_path 2> /dev/null" $username
+fi
+
+echo -n "Checking pipelight configuration... "
+if [[ -f "$userhome/.config/pipelight" ]]; then
+  green "found"
+else
+  bold "missing, copying... "
+  if [[ ! -d "$userhome/.config" ]]; then
+    mkdir "$userhome/.config"
+  fi
+  if [[ -f "/usr/share/pipelight/pipelight" ]]; then
+    cp /usr/share/pipelight/pipelight $userhome/.config/pipelight
+  else
+    cp /usr/local/share/pipelight/pipelight $userhome/.config/pipelight
+  fi
+  chown $username: $userhome/.config/pipelight
+fi
+
+echo -n "Checking Silverlight path... "
+sed -i 's/Program Files\\Silverlight/Program Files\\Microsoft Silverlight/g' \
+  $userhome/.config/pipelight
+green "done"
+
+echo
+bold "Installation done!"
+echo
+echo "Go here to test your new setup:"
+echo "http://bubblemark.com/silverlight2.html"
+echo
+
+exit 0

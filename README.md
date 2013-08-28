@@ -16,6 +16,7 @@ Download the installer:
 
 Run it as a root:
 
+    chmod 700 ./pipelight-installer
     ./pipelight-installer
 
 Start your browser and enjoy!

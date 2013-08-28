@@ -12,11 +12,11 @@ Watch Netflix and use Silverlight apps on your favourite browser.
 
 Download the installer:
 
-  wget -nd https://raw.github.com/jarijokinen/debian-pipelight/master/pipelight-installer
+    wget -nd https://raw.github.com/jarijokinen/debian-pipelight/master/pipelight-installer
 
 Run it as a root:
 
-  ./pipelight-installer
+    ./pipelight-installer
 
 Start your browser and enjoy!
 

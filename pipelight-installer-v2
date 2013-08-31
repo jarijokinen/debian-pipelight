@@ -156,7 +156,7 @@ if [[ $(dpkg -s "pipelight" 2> /dev/null) ]]; then
   green "found"
 else
   bold "missing, installing..."
-  apt-get -qq --no-install-recommends install pipelight > /dev/null
+  apt-get --no-install-recommends install pipelight > /dev/null
 fi
 
 bold "\nInstallation done!\n"
